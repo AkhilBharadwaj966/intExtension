@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: sans-serif; width: 320px; padding: 10px; }
+    button { width: 100%; margin: 5px 0; padding: 8px; }
+    #status { margin-top: 10px; font-size: 0.9em; color: #555; }
+    .bulk-form { margin-top: 8px; padding: 8px; border: 1px solid #ddd; border-radius: 6px; background: #f8f9fb; }
+    .bulk-form.hidden { display: none; }
+    .bulk-form label { font-size: 0.85em; color: #444; display: block; margin-bottom: 4px; }
+    .bulk-form textarea { width: 100%; box-sizing: border-box; resize: vertical; min-height: 120px; padding: 6px; font-family: inherit; font-size: 0.95em; }
+    .bulk-actions { display: flex; gap: 6px; margin-top: 6px; }
+    .bulk-actions button { width: auto; flex: 1; margin: 0; }
+  </style>
+</head>
+<body>
+  <h3>UPSC Notes Builder</h3>
+  <button id="collectNotes">Collect Notes (.html)</button>
+  <button id="generateQA">Generate Anki Q&A (.txt)</button>
+  <button id="askBulk">Ask In Bulk</button>
+  <div id="bulkForm" class="bulk-form hidden">
+    <label for="bulkQuestions">Paste questions (one per line)</label>
+    <textarea id="bulkQuestions" rows="8" placeholder="Question 1\nQuestion 2"></textarea>
+    <div class="bulk-actions">
+      <button id="bulkSubmit" type="button">Done</button>
+      <button id="bulkCancel" type="button">Cancel</button>
+    </div>
+  </div>
+  <div id="status">Ready</div>
+</body>
+<script src="popup.js"></script>
+</html>
