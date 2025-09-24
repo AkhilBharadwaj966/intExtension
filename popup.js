@@ -247,7 +247,7 @@ function handleBulkStatus(message) {
       setStatus(`Asking ${index}/${total}: ${truncate(question, 60)}`);
       break;
     case "waiting_reply":
-      setStatus(buildWaitingStatus(index, total, elapsedMs, timeoutMs));
+      setStatus(buildWaitingStatus(index, total, elapsedMs, timeoutMs, message.generating));
       break;
     case "answered":
       setStatus(`Received ${index}/${total}.`);
@@ -291,7 +291,7 @@ function formatCountdown(ms) {
   return parts.join(" ");
 }
 
-function buildWaitingStatus(index, total, elapsedMs = 0, timeoutMs = 0) {
+function buildWaitingStatus(index, total, elapsedMs = 0, timeoutMs = 0, generating = false) {
   const safeIndex = index || 0;
   const safeTotal = total || safeIndex || 1;
   const parts = [`Waiting for reply ${safeIndex}/${safeTotal}`];
@@ -307,6 +307,10 @@ function buildWaitingStatus(index, total, elapsedMs = 0, timeoutMs = 0) {
     if (remainingText) {
       parts.push(`time left ${remainingText}`);
     }
+  }
+
+  if (generating) {
+    parts.push("ChatGPT still generating…");
   }
 
   return parts.join(" — ");

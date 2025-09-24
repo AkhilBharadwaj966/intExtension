@@ -499,59 +499,148 @@ ${combinedMarkup}
     const last = wrappers[wrappers.length - 1];
     const contentEl = getMessageContentElement(last);
     const text = extractCleanText(contentEl, { scrubCitations: false });
-    if (!text) {
-      return null;
-    }
-    return { text, count: wrappers.length };
+    return { wrapper: last, contentEl, text, count: wrappers.length };
   }
 
-  function waitForAssistantReply(previousCount, timeoutMs = 300000, onProgress) {
-    const immediate = captureAssistantResponse(previousCount);
-    if (immediate) {
-      if (typeof onProgress === "function") {
-        onProgress(0, timeoutMs);
-      }
-      return Promise.resolve(immediate);
+  function isGeneratingResponse() {
+    if (document.querySelector('button[data-testid="stop-button"]')) {
+      return true;
     }
+    if (document.querySelector('button[aria-label="Stop generating"]')) {
+      return true;
+    }
+    if (document.querySelector('button[aria-label="Stop"]')) {
+      return true;
+    }
+    return false;
+  }
 
+  function waitForMessageCompletion(wrapper, startTime, timeoutMs, onProgress) {
+    const STABLE_WINDOW = 2000;
     return new Promise((resolve, reject) => {
-      const start = Date.now();
+      if (!wrapper) {
+        resolve();
+        return;
+      }
 
-      const notifyProgress = () => {
+      let lastMutation = Date.now();
+
+      const notify = () => {
         if (typeof onProgress === "function") {
-          const elapsed = Date.now() - start;
+          const elapsed = Date.now() - startTime;
           onProgress(elapsed, timeoutMs);
         }
       };
 
-      notifyProgress();
-
       const observer = new MutationObserver(() => {
-        const response = captureAssistantResponse(previousCount);
-        if (response) {
-          cleanup();
-          notifyProgress();
-          resolve(response);
-        }
+        lastMutation = Date.now();
+        notify();
       });
 
-      const progressInterval = typeof onProgress === "function" ? setInterval(notifyProgress, 1000) : null;
+      try {
+        observer.observe(wrapper, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+          attributes: true
+        });
+      } catch (error) {
+        notify();
+        resolve();
+        return;
+      }
+
+      const interval = setInterval(() => {
+        const now = Date.now();
+        if (now - startTime >= timeoutMs) {
+          cleanup();
+          notify();
+          reject(new Error("ChatGPT reply took too long to finish."));
+          return;
+        }
+        if (!isGeneratingResponse() && now - lastMutation >= STABLE_WINDOW) {
+          cleanup();
+          notify();
+          resolve();
+        }
+      }, 500);
 
       const cleanup = () => {
         observer.disconnect();
-        clearTimeout(timer);
-        if (progressInterval) {
-          clearInterval(progressInterval);
-        }
+        clearInterval(interval);
       };
 
-      const timer = setTimeout(() => {
-        cleanup();
-        notifyProgress();
-        reject(new Error("Timed out waiting for ChatGPT reply."));
+      notify();
+    });
+  }
+
+  function waitForAssistantReply(previousCount, timeoutMs = 300000, onProgress) {
+    const start = Date.now();
+
+    const notify = () => {
+      if (typeof onProgress === "function") {
+        const elapsed = Date.now() - start;
+        onProgress(elapsed, timeoutMs);
+      }
+    };
+
+    notify();
+
+    const progressInterval = typeof onProgress === "function" ? setInterval(notify, 1000) : null;
+
+    const cleanupProgress = () => {
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
+    };
+
+    const finalizeResponse = async (responseWrapper) => {
+      try {
+        await waitForMessageCompletion(responseWrapper, start, timeoutMs, onProgress);
+        const contentEl = getMessageContentElement(responseWrapper);
+        const text = extractCleanText(contentEl, { scrubCitations: false });
+        return {
+          text,
+          wrapper: responseWrapper,
+          count: countAssistantMessages()
+        };
+      } finally {
+        cleanupProgress();
+      }
+    };
+
+    const immediate = captureAssistantResponse(previousCount);
+    if (immediate) {
+      return finalizeResponse(immediate.wrapper);
+    }
+
+    return new Promise((resolve, reject) => {
+      let timer;
+      const observer = new MutationObserver(() => {
+        const response = captureAssistantResponse(previousCount);
+        if (response) {
+          observer.disconnect();
+          clearTimeout(timer);
+          finalizeResponse(response.wrapper).then(resolve).catch(reject);
+        }
+      });
+
+      const fail = (error) => {
+        observer.disconnect();
+        clearTimeout(timer);
+        cleanupProgress();
+        reject(error);
+      };
+
+      timer = setTimeout(() => {
+        fail(new Error("Timed out waiting for ChatGPT reply."));
       }, timeoutMs);
 
-      observer.observe(document.body, { childList: true, subtree: true });
+      try {
+        observer.observe(document.body, { childList: true, subtree: true });
+      } catch (error) {
+        fail(error);
+      }
     });
   }
 
@@ -745,7 +834,8 @@ ${combinedMarkup}
               total: state.processed + state.queue.length + 1,
               pending: state.queue.length,
               elapsedMs,
-              timeoutMs
+              timeoutMs,
+              generating: isGeneratingResponse()
             });
           }
         );
